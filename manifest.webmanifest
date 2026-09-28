@@ -1,0 +1,12 @@
+{
+  "name": "የተስኒም ማስተር ፕሮግራም",
+  "short_name": "ተስኒም",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0C3B2E",
+  "theme_color": "#0C3B2E",
+  "icons": [
+    { "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

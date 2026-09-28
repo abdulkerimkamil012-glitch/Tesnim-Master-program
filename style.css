@@ -1,0 +1,245 @@
+/* ============================================================
+   COLORS: change the values below to reskin the whole app.
+   Palette in use: sage 6D9773, deep green 0C3B2E, tan BB8A52, amber FFBA00.
+   Light theme is the top block; dark theme (auto + manual ◐ toggle) below it.
+   ============================================================ */
+:root{--bg1:#EAF1E6;--bg2:#BFD6C3;--glass:rgba(255,255,255,.5);--gb:rgba(255,255,255,.75);--sheet:rgba(238,245,236,.9);--text:#0C3B2E;--muted:#4D6B5C;
+--btn:linear-gradient(135deg,#7FAA85,#6D9773);--btnfg:#fff;--ring:#5E8A66;--gold:#B87F00;--sh:0 8px 28px rgba(12,59,46,.14);--blob1:#FFBA00;--blob2:#6D9773;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg1:#0A2A20;--bg2:#24483A;--glass:rgba(255,255,255,.07);--gb:rgba(255,255,255,.15);--sheet:rgba(14,44,35,.92);--text:#EAF3E6;--muted:#A9C4B1;
+--btn:linear-gradient(135deg,#D3E8BC,#8FB47F);--btnfg:#0C3B2E;--ring:#C7E2AE;--gold:#FFBA00;--sh:0 8px 32px rgba(0,0,0,.35);--blob1:#BB8A52;--blob2:#6D9773}}
+:root[data-theme="dark"]{--bg1:#0A2A20;--bg2:#24483A;--glass:rgba(255,255,255,.07);--gb:rgba(255,255,255,.15);--sheet:rgba(14,44,35,.92);--text:#EAF3E6;--muted:#A9C4B1;
+--btn:linear-gradient(135deg,#D3E8BC,#8FB47F);--btnfg:#0C3B2E;--ring:#C7E2AE;--gold:#FFBA00;--sh:0 8px 32px rgba(0,0,0,.35);--blob1:#BB8A52;--blob2:#6D9773}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+[hidden]{display:none!important}
+html{height:100%}
+/* Base font — change the family list here if you want a different typeface */
+body{min-height:100%;margin:0 auto;max-width:560px;background:linear-gradient(165deg,var(--bg1),var(--bg2)) fixed;color:var(--text);font-family:Inter,-apple-system,"Segoe UI",Roboto,sans-serif}
+button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer}
+:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+@media (prefers-reduced-motion:reduce){*{animation-duration:.001ms!important;transition-duration:.001ms!important}}
+.bgblob{position:fixed;inset:0;z-index:-1;overflow:hidden;pointer-events:none}
+.bgblob i{position:absolute;width:60vmax;height:60vmax;max-width:520px;max-height:520px;border-radius:50%;filter:blur(70px)}
+.bgblob i:first-child{background:var(--blob1);top:-12%;right:-25%;opacity:.3}
+.bgblob i:last-child{background:var(--blob2);bottom:-15%;left:-25%;opacity:.5}
+.glass{background:var(--glass);border:1px solid var(--gb);-webkit-backdrop-filter:blur(20px) saturate(150%);backdrop-filter:blur(20px) saturate(150%);box-shadow:var(--sh),inset 0 1px 0 rgba(255,255,255,.28)}
+header{padding:20px 18px 6px}
+.top-row{display:flex;align-items:center;justify-content:space-between}
+h1.title{margin:0;font:700 1.5rem/1.2 "Playfair Display",Georgia,serif}
+.tools{display:flex;gap:6px}
+.ibtn{width:38px;height:38px;border-radius:50%;font-size:1rem;flex-shrink:0}
+.settings-panel{display:none;margin-top:8px;padding:4px 8px;border-radius:16px}
+.settings-panel.open{display:block}
+.setrow{display:block;width:100%;text-align:right;padding:11px 6px;font-size:.83rem;border-bottom:1px solid var(--gb)}
+.setrow:last-child{border-bottom:0}
+.daynav{display:flex;align-items:center;gap:2px;margin-top:6px;color:var(--muted)}
+.daynav button.arrow{width:40px;height:40px;font-size:1.4rem;color:var(--muted)}
+.daynav .lbl{font-size:.92rem;font-weight:600}
+.daynav .sub{font-size:.75rem;display:block;color:var(--muted);font-weight:400}
+.pill{border:1px solid var(--gb);background:var(--glass);border-radius:99px;padding:9px 13px;font-size:.75rem;color:var(--muted);text-align:center}
+.pillrow{display:flex;gap:8px;margin-top:8px}
+.pillrow .pill{flex:1}
+.ringcard{display:flex;align-items:center;gap:16px;margin-top:10px;padding:12px 18px;border-radius:22px}
+svg.ring{width:68px;height:68px;transform:rotate(-90deg);flex-shrink:0}
+.ring-track,.ring-fill{fill:none;stroke-width:7}
+.ring-track{stroke:var(--gb)}
+.ring-fill{stroke:var(--ring);stroke-linecap:round;transition:stroke-dashoffset .5s ease;filter:drop-shadow(0 0 5px var(--ring))}
+.ring-text{color:var(--muted);font-size:.85rem}
+.ring-text b{color:var(--text);font:700 1.5rem "Playfair Display",Georgia,serif}
+.week-panel,.info-panel{display:none;margin-top:10px;padding:14px;border-radius:20px}
+.week-panel.open,.info-panel.open{display:block}
+.week-total{font-weight:700;margin-bottom:10px;color:var(--gold)}
+.week-row{display:flex;align-items:center;gap:8px;margin-bottom:9px;font-size:.82rem}
+.week-row:last-child{margin-bottom:0}
+.wname{width:34%;flex-shrink:0}
+.week-bar{flex:1;height:8px;background:var(--gb);border-radius:6px;overflow:hidden}
+.week-bar i{display:block;height:100%;background:var(--btn);border-radius:6px}
+.week-frac{color:var(--muted);width:38px;text-align:right;flex-shrink:0}
+.info-panel h3{margin:0 0 8px;font-size:.9rem}
+.info-panel ul{margin:0;padding-inline-start:18px;font-size:.82rem;color:var(--muted);line-height:1.6}
+main{padding:6px 18px 40px}
+.sect-lbl{margin:18px 0 8px;font-size:.78rem;font-weight:700;color:var(--muted)}
+.card{display:flex;flex-direction:column;gap:10px;margin-bottom:10px;padding:14px;border-radius:20px}
+.card-top{display:flex;align-items:flex-start;gap:10px}
+.info{flex:1;min-width:0}
+/* Name = bold + larger; description = smaller + muted colour. Change sizes here. */
+.name{font-weight:700;font-size:1.05rem}
+.desc{color:var(--muted);font-size:.8rem;line-height:1.55;margin-top:5px;white-space:pre-line}
+.actions{display:flex;flex-direction:column;gap:8px;flex-shrink:0}
+.tick{width:40px;height:40px;border-radius:50%;border:2px solid var(--ring);display:grid;place-items:center;color:var(--btnfg);font-size:1rem;transition:all .15s ease}
+.tick.done{background:var(--btn);border-color:transparent;box-shadow:0 0 12px -2px var(--ring)}
+.tick.pop,.subtick.pop{animation:pop .35s ease}
+@keyframes pop{0%{transform:scale(.75)}60%{transform:scale(1.15)}100%{transform:scale(1)}}
+.edit{width:40px;height:40px;border-radius:50%;color:var(--muted);font-size:1rem;background:var(--glass);border:1px solid var(--gb)}
+.toggle-btn{width:100%;text-align:center;padding:10px;border-radius:14px;font-size:.8rem;color:var(--muted);background:var(--glass);border:1px solid var(--gb);margin-top:14px}
+.toast{position:fixed;left:50%;bottom:24px;transform:translate(-50%,16px);opacity:0;pointer-events:none;z-index:20;padding:10px 18px;border-radius:99px;font-size:.85rem;transition:all .25s ease;max-width:90vw}
+.toast.show{opacity:1;transform:translate(-50%,0)}
+.overlay{position:fixed;inset:0;z-index:10;display:none;background:rgba(4,20,14,.5);-webkit-backdrop-filter:blur(4px);backdrop-filter:blur(4px)}
+.overlay.open{display:block}
+.sheet{position:fixed;left:0;right:0;bottom:0;z-index:11;max-width:560px;margin:0 auto;max-height:85vh;overflow-y:auto;padding:20px 20px calc(20px + env(safe-area-inset-bottom,0px));
+background:var(--sheet);border:1px solid var(--gb);border-bottom:0;border-radius:26px 26px 0 0;-webkit-backdrop-filter:blur(28px) saturate(150%);backdrop-filter:blur(28px) saturate(150%);
+transform:translateY(105%);transition:transform .28s ease}
+.sheet.open{transform:none}
+.sheet h2{margin:0 0 14px;font:700 1.15rem "Playfair Display",serif}
+.sheet label{display:block;font-size:.78rem;color:var(--muted);margin-bottom:4px;font-weight:600}
+.sheet input,.sheet textarea{width:100%;padding:12px 13px;margin-bottom:14px;border:1px solid var(--gb);border-radius:14px;background:var(--glass);color:var(--text);font:inherit;font-size:.9rem}
+.sheet textarea{min-height:110px;resize:vertical;white-space:pre-line}
+.rowbtns{display:flex;gap:10px}
+.rowbtns button{flex:1;padding:13px;border-radius:14px;font-weight:700;font-size:.9rem}
+.savebtn{background:var(--btn);color:var(--btnfg)}
+.cancelbtn{background:var(--glass);border:1px solid var(--gb)}
+
+/* ---- new-feature styles ---- */
+.tag{display:inline-block;margin-inline-start:6px;padding:1px 8px;border-radius:99px;background:var(--gb);color:var(--muted);font-size:.62rem;font-weight:600;vertical-align:middle}
+.card.done-card{opacity:.55}
+.card.done-card .name{text-decoration:line-through}
+.del{width:40px;height:40px;border-radius:50%;color:var(--muted);font-size:.9rem;background:var(--glass);border:1px solid var(--gb)}
+.sublist{margin-top:8px;display:flex;flex-direction:column;gap:6px}
+.subrow{display:flex;align-items:center;gap:8px;font-size:.82rem}
+.subtick{width:24px;height:24px;border-radius:50%;border:2px solid var(--ring);display:grid;place-items:center;font-size:.68rem;flex-shrink:0;color:var(--btnfg)}
+.subtick.done{background:var(--btn);border-color:transparent}
+.subcount{margin-top:4px;font-size:.72rem;color:var(--muted)}
+.streak{font-size:.85rem;color:var(--gold);font-weight:700;margin-bottom:8px}
+.rep-h{font-size:.78rem;font-weight:700;color:var(--muted);margin:10px 0 4px}
+.rep-h.done{color:var(--ring)}
+.rep-list{margin:0;padding-inline-start:18px;font-size:.82rem;line-height:1.6}
+.week-bar i.hi{background:var(--ring)}
+.week-bar i.mid{background:var(--gold)}
+.week-bar i.lo{background:#C0524A}
+.choice{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:30;background:var(--sheet);border:1px solid var(--gb);border-radius:18px;padding:18px;max-width:320px;width:88vw;text-align:center;box-shadow:var(--sh);-webkit-backdrop-filter:blur(28px) saturate(150%);backdrop-filter:blur(28px) saturate(150%)}
+.choice p{margin:0 0 14px;font-size:.92rem;color:var(--text)}
+.choice button{display:block;width:100%;padding:12px;margin-bottom:8px;border-radius:12px;font-weight:700;background:var(--btn);color:var(--btnfg)}
+.choice button:last-child{margin-bottom:0;background:var(--glass);color:var(--text);border:1px solid var(--gb);font-weight:600}
+.typerow{display:flex;gap:8px;margin-bottom:14px}
+.typebtn{flex:1;padding:11px;border-radius:14px;background:var(--glass);border:1px solid var(--gb);font-size:.8rem;font-weight:600;color:var(--muted)}
+.typebtn.active{background:var(--btn);color:var(--btnfg);border-color:transparent}
+.daychips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px}
+.daychip{padding:8px 12px;border-radius:99px;background:var(--glass);border:1px solid var(--gb);font-size:.78rem;color:var(--muted)}
+.daychip.active{background:var(--btn);color:var(--btnfg);border-color:transparent}
+.subedit{display:flex;gap:6px;margin-bottom:8px}
+.subedit input{flex:1;padding:9px 11px;border:1px solid var(--gb);border-radius:12px;background:var(--glass);color:var(--text);font-size:.85rem}
+.subdel{width:34px;height:34px;border-radius:50%;background:var(--glass);border:1px solid var(--gb);color:var(--muted);flex-shrink:0}
+.addsub{width:100%;padding:10px;border-radius:12px;background:var(--glass);border:1px dashed var(--gb);color:var(--muted);font-size:.82rem;margin-bottom:14px}
+@keyframes glow{0%,100%{box-shadow:var(--sh)}50%{box-shadow:0 0 0 10px rgba(255,186,0,.25),var(--sh)}}
+.celebrate .ringcard{animation:glow .9s ease}
+
+/* ---- v2 additions: logo, meal bullets, pages, detail view (Calendar/Statistics/Edit) ---- */
+.brand{display:flex;align-items:center;gap:9px;min-width:0}
+.logo{width:30px;height:30px;flex-shrink:0}
+h1.title{white-space:normal}
+
+/* Ingredient bullets — replaces the old single wall-of-text paragraph */
+.ing-list{margin:2px 0 6px;padding-inline-start:16px}
+.ing-list li{margin-bottom:2px}
+.ing-line{margin:2px 0 6px}
+.desc .ing-list:last-child,.desc .ing-line:last-child{margin-bottom:0}
+
+/* Pages row (prohibited foods, notices, anything you add) */
+.pagesrow{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+.pagepill{border:1px solid var(--gb);background:var(--glass);border-radius:99px;padding:9px 14px;font-size:.78rem;color:var(--muted)}
+.pagepill.active{background:var(--btn);color:var(--btnfg);border-color:transparent}
+.pagepill.addpage{border-style:dashed}
+.pagepanel{display:none;margin-top:10px;padding:14px;border-radius:20px}
+.pagepanel.open{display:block}
+.pagepanel-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px}
+.pagepanel-head h3{margin:0;font-size:.9rem}
+.pagepanel-tools{display:flex;gap:6px;flex-shrink:0}
+.pagepanel-tools button{width:30px;height:30px;border-radius:50%;background:var(--glass);border:1px solid var(--gb);color:var(--muted);font-size:.8rem}
+.pagepanel ul{margin:0;padding-inline-start:18px;font-size:.82rem;color:var(--muted);line-height:1.6}
+
+/* Undo bar after deleting a program/page */
+.undo{position:fixed;left:50%;bottom:24px;transform:translate(-50%,16px);opacity:0;pointer-events:none;z-index:21;display:flex;align-items:center;gap:12px;
+  padding:10px 10px 10px 18px;border-radius:99px;font-size:.85rem;transition:all .25s ease;max-width:90vw}
+.undo.show{opacity:1;transform:translate(-50%,0);pointer-events:auto}
+.undo button{background:var(--btn);color:var(--btnfg);font-weight:700;padding:7px 14px;border-radius:99px;font-size:.8rem;flex-shrink:0}
+
+/* Tapping a card's name/description opens the detail view */
+.info.opens-detail{cursor:pointer}
+
+/* ---- Detail view: full-screen page with Calendar / Statistics / Edit tabs ---- */
+.detail{position:fixed;inset:0;z-index:15;display:none;overflow-y:auto;background:linear-gradient(165deg,var(--bg1),var(--bg2));
+  padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+.detail.open{display:block}
+.detail-head{display:flex;align-items:center;gap:10px;padding:16px 18px 4px;max-width:560px;margin:0 auto}
+.detail-head .arrow{width:38px;height:38px;font-size:1.3rem;color:var(--muted);flex-shrink:0}
+.detail-title{flex:1;font:700 1.1rem "Playfair Display",Georgia,serif;min-width:0;overflow-wrap:anywhere}
+.detail-tabs{display:flex;gap:6px;padding:12px 18px;max-width:560px;margin:0 auto}
+.dtab{flex:1;padding:10px 4px;border-radius:14px;font-size:.8rem;font-weight:700;color:var(--muted);background:var(--glass);border:1px solid var(--gb)}
+.dtab.active{background:var(--btn);color:var(--btnfg);border-color:transparent}
+.detail-body{padding:4px 18px 50px;max-width:560px;margin:0 auto}
+
+/* Calendar tab */
+.cal-nav{display:flex;align-items:center;justify-content:space-between;margin:10px 0}
+.cal-nav b{font-size:.95rem}
+.cal-nav button{width:34px;height:34px;border-radius:50%;background:var(--glass);border:1px solid var(--gb);color:var(--muted)}
+.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:5px;text-align:center}
+.cal-wd{font-size:.68rem;color:var(--muted);padding-bottom:4px}
+.cal-cell{aspect-ratio:1;border-radius:50%;display:grid;place-items:center;font-size:.78rem;color:var(--text)}
+.cal-cell.na{color:var(--muted);opacity:.35}
+.cal-cell.done{background:var(--btn);color:var(--btnfg);font-weight:700}
+.cal-cell.missed{border:2px solid #C0524A;color:#C0524A;font-weight:600}
+.cal-cell.upcoming{border:1px solid var(--gb);color:var(--muted)}
+.cal-cell.today{outline:2px solid var(--gold);outline-offset:2px}
+.cal-legend{display:flex;flex-wrap:wrap;gap:12px;margin-top:14px;font-size:.72rem;color:var(--muted)}
+.cal-legend span{display:inline-flex;align-items:center;gap:5px}
+.cal-legend i{width:11px;height:11px;border-radius:50%;display:inline-block}
+.cal-legend i.done{background:var(--btn)}
+.cal-legend i.missed{border:2px solid #C0524A}
+.cal-legend i.upcoming{border:1px solid var(--gb)}
+.detail-desc{margin-top:16px;padding:14px;border-radius:18px}
+.detail-desc h4{margin:0 0 6px;font-size:.8rem;color:var(--muted)}
+
+/* Statistics tab */
+.trend-row{display:flex;justify-content:space-between;gap:4px;margin:12px 0 18px}
+.trend-cell{display:flex;flex-direction:column;align-items:center;gap:5px;font-size:.62rem;color:var(--muted)}
+.trend-dot{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;font-size:.65rem}
+.trend-dot.done{background:var(--btn);color:var(--btnfg)}
+.trend-dot.missed{border:2px solid #C0524A}
+.trend-dot.na{border:1px solid var(--gb);opacity:.4}
+.stat-row{margin-bottom:14px}
+.stat-row-h{display:flex;justify-content:space-between;font-size:.82rem;margin-bottom:5px}
+.stat-row-h b{color:var(--text)}
+.stat-bar{height:9px;background:var(--gb);border-radius:6px;overflow:hidden}
+.stat-bar i{display:block;height:100%;background:var(--btn);border-radius:6px}
+.streak-card{display:flex;gap:18px;margin:10px 0 18px}
+.streak-card>div{flex:1;padding:14px;border-radius:18px;text-align:center}
+.streak-card b{display:block;font:700 1.4rem "Playfair Display",Georgia,serif;color:var(--gold)}
+.streak-card span{font-size:.72rem;color:var(--muted)}
+
+/* ---- Recycle Bin view (reuses .detail / .detail-head / .detail-body from
+   the program detail view above, so it matches the app's look exactly) ---- */
+.trash-clear-all{flex-shrink:0;padding:8px 12px;border-radius:99px;font-size:.76rem;font-weight:700;color:#C0524A;background:var(--glass);border:1px solid var(--gb)}
+.trash-card{display:flex;align-items:center;gap:10px;margin-bottom:10px;padding:14px;border-radius:20px}
+.trash-info{flex:1;min-width:0}
+.trash-when{color:var(--muted);font-size:.72rem;margin-top:4px}
+.trash-actions{display:flex;flex-direction:column;gap:8px;flex-shrink:0}
+.trash-restore,.trash-purge{padding:8px 12px;border-radius:99px;font-size:.74rem;font-weight:700;white-space:nowrap}
+.trash-restore{background:var(--btn);color:var(--btnfg)}
+.trash-purge{background:var(--glass);border:1px solid var(--gb);color:#C0524A}
+.trash-empty{text-align:center;color:var(--muted);font-size:.88rem;padding:60px 20px}
+
+/* ---- Per-card weekly overview strip + quick-access footer, on every
+   card in the main list (matches the reference screenshots): always
+   shows the REAL current Mon–Sun week, independent of the ‹/› day-nav
+   arrows up top. Tap a day to tick it; 📅/📊 jump into that tab. ---- */
+.week-strip-hd{display:flex;padding:0 2px;margin-bottom:3px}
+.week-strip-hd span{flex:1;text-align:center;font-size:.6rem;color:var(--muted)}
+.week-strip-row{display:flex;gap:4px}
+.wd-cell{flex:1;aspect-ratio:1;border-radius:50%;display:grid;place-items:center;font-size:.72rem;color:var(--muted);background:var(--glass);border:1px solid var(--gb)}
+.wd-cell.na{opacity:.35}
+.wd-cell.due{border-color:var(--gold);color:var(--gold);font-weight:700}
+.wd-cell.done{background:var(--btn);color:var(--btnfg);border-color:transparent;font-weight:700}
+.wd-cell.today{outline:2px solid var(--gold);outline-offset:1px}
+.card-foot{display:flex;align-items:center;gap:10px;padding-top:8px;border-top:1px solid var(--gb)}
+.cf-stat{font-size:.74rem;color:var(--muted);font-weight:700}
+.cf-spacer{flex:1}
+.cf-btn{width:30px;height:30px;border-radius:50%;background:var(--glass);border:1px solid var(--gb);color:var(--muted);font-size:.85rem;flex-shrink:0}
+
+/* Edit tab reuses .sheet-style form rows but inline (not a bottom sheet) */
+.edit-tab label{display:block;font-size:.78rem;color:var(--muted);margin-bottom:4px;font-weight:600;margin-top:12px}
+.edit-tab label:first-child{margin-top:0}
+.edit-tab input,.edit-tab textarea{width:100%;padding:12px 13px;border:1px solid var(--gb);border-radius:14px;background:var(--glass);color:var(--text);font:inherit;font-size:.9rem}
+.edit-tab textarea{min-height:100px;resize:vertical;white-space:pre-line}
+.edit-tab .typerow,.edit-tab .daychips{margin-top:6px}
+.edit-tab .savebtn{width:100%;margin-top:18px;padding:14px;border-radius:14px;font-weight:700;background:var(--btn);color:var(--btnfg)}
+.edit-tab .delbtn{width:100%;margin-top:10px;padding:14px;border-radius:14px;font-weight:700;background:none;border:1px solid #C0524A;color:#C0524A}

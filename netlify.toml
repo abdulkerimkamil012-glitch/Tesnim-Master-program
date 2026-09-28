@@ -1,0 +1,5 @@
+# Netlify reads this automatically — no dashboard setup needed beyond
+# connecting the repo. See README.md for the click-by-click steps.
+[build]
+  command = "npm run build"
+  publish = "dist"
