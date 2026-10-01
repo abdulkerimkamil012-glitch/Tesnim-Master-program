@@ -3,10 +3,11 @@
   'use strict';
   var SB_URL = 'https://xdjfiiuqiecntyuarvkq.supabase.co', SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhkamZpaXVxaWVjbnR5dWFydmtxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA3NDM2NDcsImV4cCI6MjEwNjMxOTY0N30.kyiKWvh8OvQQG7vVtLHddc-Sksk_2U3ZVI42o3V51as';
   var SH = ['tesnim_programs', 'tesnim_pages', 'tesnim_trash', 'tesnim_removed_seeds'];
-  var MI = ['tesnim_log', 'tesnim_dayov', 'tesnim_first'];
+  var MI = ['tesnim_dayov', 'tesnim_first'];
   var PERMS = [['add', '＋ መጨመር'], ['edit', '✎ አርትዕ'], ['del', '🗑 መሰረዝ'], ['trash', '♻ ቆሻሻ መጣያ'], ['dash', '◔ አጠቃላይ ውጤት'], ['rep', '📋 ሪፖርቶች'], ['set', '⚙ ቅንብሮች'], ['stat', '📊 ስታትስቲክስ'], ['cal', '📅 ቀን መቁጠሪያ']];
   var ls = window.localStorage, rawSet = Storage.prototype.setItem, rawRem = Storage.prototype.removeItem;
-  var tok = ls.getItem('tesnim_token'), me = null, cur = { sv: 0, mv: 0 }, ready = false, timer = null;
+  var tok = ls.getItem('tesnim_token'), me = null, cur = { sv: 0, mv: 0, lv: 0 }, ready = false, timer = null, prev = {};
+  try { window.TESNIM_ALL_PROGRAMS = JSON.parse(ls.getItem('tesnim_allprogs') || 'null'); } catch (e) { window.TESNIM_ALL_PROGRAMS = null; }
   var $ = function (id) { return document.getElementById(id); };
   var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); };
 
@@ -14,21 +15,36 @@
     return fetch(SB_URL + '/rest/v1/rpc/' + fn, { method: 'POST', headers: { apikey: SB_KEY, Authorization: 'Bearer ' + SB_KEY, 'Content-Type': 'application/json' }, body: JSON.stringify(args || {}) })
       .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.message || 'error'); return j; }); });
   }
-  function sig() { return cur.sv + ':' + cur.mv + ':' + JSON.stringify([me.programs, me.perms, me.is_admin]); }
+  function sig() { return cur.sv + ':' + cur.mv + ':' + cur.lv + ':' + JSON.stringify([me.programs, me.perms, me.is_admin]); }
   function canShared() { return me.is_admin || (me.programs === 'all' && (me.perms.add || me.perms.edit || me.perms.del)); }
 
   // Every app save to localStorage is pushed to the cloud a moment later
   Storage.prototype.setItem = function (k, v) {
     rawSet.call(this, k, v);
-    if (ready && this === ls && (SH.indexOf(k) > -1 || MI.indexOf(k) > -1)) { clearTimeout(timer); timer = setTimeout(push, 1200); }
+    if (ready && this === ls && (SH.indexOf(k) > -1 || MI.indexOf(k) > -1 || k === 'tesnim_log')) { clearTimeout(timer); timer = setTimeout(push, 1200); }
   };
   function pick(keys) { var o = {}; keys.forEach(function (k) { var v = ls.getItem(k); if (v != null) o[k] = v; }); return o; }
+  function readLog() { try { return JSON.parse(ls.getItem('tesnim_log') || '{}') || {}; } catch (e) { return {}; } }
+  function logDiff() {   // only the ticks THIS phone changed (so nobody's ticks get overwritten)
+    var now = readLog(), ch = {}, any = false;
+    Object.keys(now).concat(Object.keys(prev)).forEach(function (d) {
+      var a = now[d] || {}, b = prev[d] || {};
+      Object.keys(a).concat(Object.keys(b)).forEach(function (p) {
+        if (JSON.stringify(a[p]) !== JSON.stringify(b[p])) { (ch[d] = ch[d] || {})[p] = a[p] === undefined ? null : a[p]; any = true; }
+      });
+    });
+    return any ? { ch: ch, now: now } : null;
+  }
   function push() {
     timer = null; if (!me) return;
-    var sh = canShared();
-    api('app_put', { p_tok: tok, p_shared: sh ? pick(SH) : null, p_mine: pick(MI) }).then(function (r) {
+    var sh = canShared(), df = logDiff();
+    var jobs = [api('app_put', { p_tok: tok, p_shared: sh ? pick(SH) : null, p_mine: pick(MI) }).then(function (r) {
       cur.mv = r.mv; if (sh) cur.sv = r.sv; rawSet.call(ls, 'tesnim_cv', sig());
-    }).catch(function () { clearTimeout(timer); timer = setTimeout(push, 10000); });
+    })];
+    if (df) jobs.push(api('app_put_log', { p_tok: tok, p_changes: df.ch }).then(function (r) {
+      prev = df.now; if (r.lv === cur.lv + 1) cur.lv = r.lv; rawSet.call(ls, 'tesnim_cv', sig());
+    }));
+    Promise.all(jobs).catch(function () { clearTimeout(timer); timer = setTimeout(push, 10000); });
   }
   function apply(d) {
     SH.forEach(function (k) {
@@ -40,6 +56,8 @@
       if (v == null) rawRem.call(ls, k); else rawSet.call(ls, k, v);
     });
     MI.forEach(function (k) { var v = d.mine[k]; if (v == null) rawRem.call(ls, k); else rawSet.call(ls, k, v); });
+    rawSet.call(ls, 'tesnim_log', JSON.stringify(d.log || {})); prev = d.log || {};
+    if (me.programs !== 'all' && !me.is_admin && d.shared.tesnim_programs) rawSet.call(ls, 'tesnim_allprogs', d.shared.tesnim_programs); else rawRem.call(ls, 'tesnim_allprogs');
     rawSet.call(ls, 'tesnim_cv', sig());
   }
   function safe() {
@@ -53,17 +71,17 @@
   }
   function logout() {
     api('app_put', { p_tok: tok, p_shared: null, p_mine: pick(MI) }).catch(function () { }).then(function () {
-      SH.concat(MI, ['tesnim_token', 'tesnim_cv']).forEach(function (k) { rawRem.call(ls, k); }); location.reload();
+      SH.concat(MI, ['tesnim_token', 'tesnim_cv', 'tesnim_log', 'tesnim_allprogs']).forEach(function (k) { rawRem.call(ls, k); }); location.reload();
     });
   }
   function start(d) {
-    me = d.user; cur = { sv: d.sv, mv: d.mv }; classes(); chip();
-    if (me.is_admin && d.sv === 0) { ready = true; push(); rawSet.call(ls, 'tesnim_cv', sig()); return unveil(); }
+    me = d.user; cur = { sv: d.sv, mv: d.mv, lv: d.lv }; prev = d.log || {}; classes(); chip();
+    if (me.is_admin && d.sv === 0) { prev = {}; ready = true; push(); rawSet.call(ls, 'tesnim_cv', sig()); return unveil(); }
     if (ls.getItem('tesnim_cv') !== sig()) { apply(d); return location.reload(); }
     ready = true; unveil();
     setInterval(function () {
       api('app_get', { p_tok: tok }).then(function (n) {
-        me = n.user; var old = cur; cur = { sv: n.sv, mv: n.mv };
+        me = n.user; var old = cur; cur = { sv: n.sv, mv: n.mv, lv: n.lv };
         if (ls.getItem('tesnim_cv') !== sig()) { if (safe()) { apply(n); location.reload(); } else cur = old; }
       }).catch(function (e) { if (/auth/.test(e.message)) { ls.removeItem('tesnim_token'); location.reload(); } });
     }, 8000);
@@ -82,16 +100,29 @@
     'body:not(.is-admin) #importBtn,body:not(.is-admin) #exportBtn{display:none}.no-add #addBtn,.no-add #addPageBtn{display:none}.no-edit .edit,.no-edit [data-pgedit],.no-edit .dtab[data-tab=edit]{display:none}' +
     '.no-del .del,.no-del [data-pgdel],.no-del #etDelete,.no-del .trash-purge,.no-del #trashClearAll{display:none}.no-trash #trashBtn{display:none}.no-dash .ringcard{display:none}.no-rep #dayRepBtn,.no-rep #weekBtn{display:none}' +
     '.no-set #remindBtn{display:none}.no-set.no-trash #settingsBtn,.no-set.no-trash #settingsPanel{display:none}.no-stat [data-openstat],.no-stat .dtab[data-tab=stat]{display:none}.no-cal [data-opencal],.no-cal .dtab[data-tab=cal]{display:none}.no-cal.no-stat.no-edit #detailView{display:none!important}';
+  css.textContent += `#cl-login,#cl-admin{background:radial-gradient(circle at 18% 12%,#2f8f6a 0,transparent 45%),radial-gradient(circle at 88% 85%,#ffba0055 0,transparent 42%),linear-gradient(160deg,#0c3b2e,#071f18)}
+#cl-login form,#cl-admin .in{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.22);border-radius:28px;box-shadow:0 20px 60px rgba(0,0,0,.45),inset 0 1px 0 rgba(255,255,255,.25);-webkit-backdrop-filter:blur(22px) saturate(160%);backdrop-filter:blur(22px) saturate(160%)}
+#cl-login form{padding:30px 24px}#cl-admin .in{margin:18px auto;padding:22px 18px}
+.lg-logo{width:68px;height:68px;margin:0 auto;border-radius:22px;display:grid;place-items:center;font-size:34px;background:linear-gradient(145deg,#ffd760,#e79a00);box-shadow:0 8px 24px #ffba0066}
+#cl-login h2{text-align:center;margin:8px 0 0}#cl-login p{margin:0 0 6px;text-align:center;opacity:.7;font-size:14px}
+.cl-in{background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.25)}.cl-in:focus{outline:2px solid #ffba00;border-color:transparent}
+.cl-btn{background:linear-gradient(135deg,#ffd760,#ffa800);box-shadow:0 6px 18px #ffba0055}.cl-btn.g{background:rgba(255,255,255,.16);box-shadow:none}.cl-btn.r{background:#c0392b;box-shadow:none}
+.cl-row{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.18)}
+.cl-chk input{-webkit-appearance:none;appearance:none;width:42px;height:24px;border-radius:99px;background:#ffffff33;position:relative;flex:none;transition:.2s}
+.cl-chk input:before{content:'';position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:#fff;transition:.2s}.cl-chk input:checked{background:#2fbf84}.cl-chk input:checked:before{left:21px}
+#cl-chip{padding:7px;gap:10px;background:rgba(12,42,32,.55);border:1px solid rgba(255,255,255,.25);-webkit-backdrop-filter:blur(18px) saturate(160%);backdrop-filter:blur(18px) saturate(160%);box-shadow:0 10px 30px rgba(0,0,0,.35),inset 0 1px 0 rgba(255,255,255,.25)}
+#cl-chip .av{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;font-weight:700;background:linear-gradient(145deg,#ffd760,#e79a00);color:#3b2a00}
+#cl-chip .nm{display:flex;flex-direction:column;line-height:1.15;font-weight:600}#cl-chip .nm small{font-size:10px;opacity:.7;font-weight:400}`;
   document.head.appendChild(css);
   function el(id, html) { var d = document.createElement('div'); d.id = id; d.innerHTML = html || ''; document.body.appendChild(d); return d; }
   function unveil() { var v = $('cl-veil'); if (v) v.remove(); }
   function chip() {
-    el('cl-chip', '<span>👤 ' + esc(me.username) + '</span>' + (me.is_admin ? '<button id="cl-adm">👑 ተጠቃሚዎች</button>' : '') + '<button id="cl-out">ውጣ</button>');
+    el('cl-chip', '<span class="av">' + esc(me.username.charAt(0).toUpperCase()) + '</span><span class="nm">' + esc(me.username) + '<small>' + (me.is_admin ? 'አስተዳዳሪ' : 'ተጠቃሚ') + '</small></span>' + (me.is_admin ? '<button id="cl-adm">👑 ተጠቃሚዎች</button>' : '') + '<button id="cl-out">ውጣ</button>');
     $('cl-out').onclick = logout; if (me.is_admin) $('cl-adm').onclick = admin;
   }
   function login() {
     unveil();
-    el('cl-login', '<form id="cl-f"><h2>🌿 ግባ</h2><input class="cl-in" id="cl-u" placeholder="የተጠቃሚ ስም" autocapitalize="none" autocomplete="username"><input class="cl-in" id="cl-p" type="password" placeholder="የይለፍ ቃል" autocomplete="current-password"><div id="cl-err"></div><button class="cl-btn" type="submit">ግባ</button></form>');
+    el('cl-login', '<form id="cl-f"><div class="lg-logo">🌿</div><h2>እንኳን ደህና መጡ</h2><p>ለመቀጠል ይግቡ</p><input class="cl-in" id="cl-u" placeholder="የተጠቃሚ ስም" autocapitalize="none" autocomplete="username"><input class="cl-in" id="cl-p" type="password" placeholder="የይለፍ ቃል" autocomplete="current-password"><div id="cl-err"></div><button class="cl-btn" type="submit">ግባ</button></form>');
     $('cl-f').onsubmit = function (e) {
       e.preventDefault(); $('cl-err').textContent = '...';
       api('app_login', { p_user: $('cl-u').value.trim(), p_pass: $('cl-p').value }).then(function (r) { rawSet.call(ls, 'tesnim_token', r.token); location.reload(); })
