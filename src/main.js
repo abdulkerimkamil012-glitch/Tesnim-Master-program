@@ -293,12 +293,14 @@ function render() {
   const dayPrograms = all.filter(p => Array.isArray(p.schedule));
   const dailyPrograms = all.filter(p => p.schedule === 'daily');
   const doneAll = all.filter(p => isDone(ds, p));
-  const CIRC = 2 * Math.PI * 26, pct = all.length ? doneAll.length / all.length : 0;
+  // dashboard ring counts ALL programs (everyone's), even when this user only sees some of them
+  const ringAll = window.TESNIM_ALL_PROGRAMS ? window.TESNIM_ALL_PROGRAMS.filter(p => appliesOn(p, sel)) : all, ringDone = ringAll.filter(p => isDone(ds, p));
+  const CIRC = 2 * Math.PI * 26, pct = ringAll.length ? ringDone.length / ringAll.length : 0;
 
   $('dLbl').textContent = WD[sel.getDay()];
   $('dSub').textContent = sel.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
   const rf = $('ringFill'); rf.style.strokeDasharray = CIRC; rf.style.strokeDashoffset = CIRC * (1 - pct);
-  $('ringText').innerHTML = `<b>${Math.round(pct * 100)}%</b><br>${doneAll.length} ከ ${all.length} ተጠናቅቋል`;
+  $('ringText').innerHTML = `<b>${Math.round(pct * 100)}%</b><br>${ringDone.length} ከ ${ringAll.length} ተጠናቅቋል`;
 
   const byIncomplete = (a, b) => isDone(ds, a) - isDone(ds, b);
   $('list').innerHTML =
@@ -306,7 +308,7 @@ function render() {
     (dailyPrograms.length ? '<div class="sect-lbl">ዕለታዊ ማሳሰቢያ</div>' + dailyPrograms.slice().sort(byIncomplete).map(p => card(p, ds)).join('') : '') +
     (!all.length ? '<div class="sect-lbl">ምንም ፕሮግራም የለም — ከላይ ባለው ＋ ይጨምሩ</div>' : '');
 
-  drawDayReport(ds, all, doneAll, pct);
+  drawDayReport(ds, ringAll, ringDone, pct);
   drawWeek();
 
   if (lastPct !== null && pct === 1 && lastPct < 1) celebrate();
@@ -331,7 +333,7 @@ function drawWeek() {
   const stats = {};
   for (let i = 0; i < 7; i++) {
     const d = new Date(mon); d.setDate(mon.getDate() + i); const ds = fmt(d);
-    const tasks = tasksFor(d), doneList = tasks.filter(p => isDone(ds, p)), n = doneList.length;
+    const tasks = window.TESNIM_ALL_PROGRAMS ? window.TESNIM_ALL_PROGRAMS.filter(p => appliesOn(p, d)) : tasksFor(d), doneList = tasks.filter(p => isDone(ds, p)), n = doneList.length;
     td += n; tt += tasks.length;
     if (tasks.length && n === tasks.length) winDays++;
     const pct = tasks.length ? n / tasks.length : 0;
