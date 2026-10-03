@@ -25,6 +25,19 @@ const PDAY_LABELS = ['ሰኞ', 'ማክሰኞ', 'ረቡዕ', 'ሐሙስ', 'አር
 let FIRST_RUN = localStorage.getItem(LS_FIRST);
 if (!FIRST_RUN) { FIRST_RUN = fmt(today()); localStorage.setItem(LS_FIRST, FIRST_RUN); }
 
+/* ============================================================
+   ROLE + DAY LOCK (written by public/cloud.js after login).
+   ROLE.r    = restricted user: sees ONLY the activities the server sent
+               (we must never re-add built-in activities for them).
+   ROLE.tick = may tick at all.   ROLE.past = may change PAST days.
+   Rule: everyone edits only TODAY; past days only with ROLE.past;
+   future days never. The server enforces the same rule (app_put_log).
+   ============================================================ */
+const ROLE = { r: false, past: false, tick: true };
+try { Object.assign(ROLE, JSON.parse(localStorage.getItem('tesnim_role') || '{}')); } catch (e) { /* keep safe defaults */ }
+const dayEditable = ds => { const t = fmt(today()); return ds === t ? ROLE.tick : (ds < t && ROLE.past && ROLE.tick); };
+const lockToast = ds => toast(!ROLE.tick ? '🔒 ምልክት የማድረግ ፈቃድ የለዎትም' : (ds > fmt(today()) ? '🔒 የወደፊት ቀን ምልክት ማድረግ አይቻልም' : '🔒 ያለፈ ቀን ማስተካከል አይቻልም'));
+
 // Ids of seed (data.js-sourced) programs/pages the person has deliberately
 // deleted from within the app. Without this set, syncSeedPrograms/
 // syncSeedPages below would silently re-add a deleted-but-never-customized
@@ -92,7 +105,7 @@ function syncSeedPrograms() {
   // A seed item removed from data.js, and never customized, quietly disappears too.
   programs = programs.filter(p => !(p.seed && !p.customized && !seedIds.has(p.id)));
 }
-syncSeedPrograms();
+if (!ROLE.r) syncSeedPrograms(); // restricted users get exactly the list the server sends — never re-add built-ins
 
 if (isFirstRun) {
   // Carry over permanent text edits from a much older single-file version, if any.
@@ -293,11 +306,13 @@ function render() {
   const dayPrograms = all.filter(p => Array.isArray(p.schedule));
   const dailyPrograms = all.filter(p => p.schedule === 'daily');
   const doneAll = all.filter(p => isDone(ds, p));
-  // dashboard ring counts ALL programs (everyone's), even when this user only sees some of them
-  const ringAll = window.TESNIM_ALL_PROGRAMS ? window.TESNIM_ALL_PROGRAMS.filter(p => appliesOn(p, sel)) : all, ringDone = ringAll.filter(p => isDone(ds, p));
+  // the ring and reports count ONLY the activities this person can see
+  const ringAll = all, ringDone = doneAll;
   const CIRC = 2 * Math.PI * 26, pct = ringAll.length ? ringDone.length / ringAll.length : 0;
 
-  $('dLbl').textContent = WD[sel.getDay()];
+  const editable = dayEditable(ds);
+  document.body.classList.toggle('day-locked', !editable);
+  $('dLbl').textContent = WD[sel.getDay()] + (editable ? '' : ' 🔒');
   $('dSub').textContent = sel.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
   const rf = $('ringFill'); rf.style.strokeDasharray = CIRC; rf.style.strokeDashoffset = CIRC * (1 - pct);
   $('ringText').innerHTML = `<b>${Math.round(pct * 100)}%</b><br>${ringDone.length} ከ ${ringAll.length} ተጠናቅቋል`;
@@ -333,7 +348,7 @@ function drawWeek() {
   const stats = {};
   for (let i = 0; i < 7; i++) {
     const d = new Date(mon); d.setDate(mon.getDate() + i); const ds = fmt(d);
-    const tasks = window.TESNIM_ALL_PROGRAMS ? window.TESNIM_ALL_PROGRAMS.filter(p => appliesOn(p, d)) : tasksFor(d), doneList = tasks.filter(p => isDone(ds, p)), n = doneList.length;
+    const tasks = tasksFor(d), doneList = tasks.filter(p => isDone(ds, p)), n = doneList.length;
     td += n; tt += tasks.length;
     if (tasks.length && n === tasks.length) winDays++;
     const pct = tasks.length ? n / tasks.length : 0;
@@ -363,6 +378,7 @@ $('list').onclick = async e => {
     // Tapping a day in a card's mini week-strip ticks THAT day directly —
     // independent of whichever day the ‹/› nav up top is currently on.
     const [pid, wds] = wb.dataset.wtick.split(':');
+    if (!dayEditable(wds)) { lockToast(wds); return; }
     const p = programs.find(x => x.id === pid); if (!p) return;
     if (p.type === 'checklist') {
       const wasDone = isDone(wds, p);
@@ -377,12 +393,14 @@ $('list').onclick = async e => {
   if (stb) { openDetail(stb.dataset.openstat, 'stat'); return; }
 
   if (sb) {
+    if (!dayEditable(ds)) { lockToast(ds); return; }
     const [pid, sid] = sb.dataset.subtick.split(':');
     logs[ds] = logs[ds] || {}; logs[ds][pid] = logs[ds][pid] || {};
     logs[ds][pid][sid] = !logs[ds][pid][sid]; persist(); render();
     pop(`[data-subtick="${pid}:${sid}"]`); return;
   }
   if (tb) {
+    if (!dayEditable(ds)) { lockToast(ds); return; }
     const id = tb.dataset.tick, p = programs.find(x => x.id === id);
     if (p.type === 'checklist') {
       const wasDone = isDone(ds, p);
