@@ -182,7 +182,11 @@ const subDone = (ds, p, sid) => !!(logs[ds] && logs[ds][p.id] && logs[ds][p.id][
 
 /* ---------- streaks & motivation ---------- */
 function streakUpTo(d) { // app-wide: every applicable task done, how many days in a row
+  // Today is still in progress, so an unfinished TODAY does not break the streak:
+  // we simply start counting from yesterday (this fixes "streak is 0 every morning").
   let s = 0, cur = new Date(d);
+  const t0 = tasksFor(cur);
+  if (!t0.length || t0.some(p => !isDone(fmt(cur), p))) cur.setDate(cur.getDate() - 1);
   while (true) {
     const ds = fmt(cur), tasks = tasksFor(cur);
     if (!tasks.length || tasks.filter(p => isDone(ds, p)).length < tasks.length) break;
@@ -192,10 +196,12 @@ function streakUpTo(d) { // app-wide: every applicable task done, how many days 
 }
 function programStreak(p) { // just this one program, how many days in a row
   let s = 0, cur = today();
+  const t0 = fmt(cur);
   while (fmt(cur) >= p.createdAt) {
+    const ds = fmt(cur);
     if (appliesOn(p, cur)) {
-      if (!isDone(fmt(cur), p)) break;
-      s++;
+      if (isDone(ds, p)) s++;
+      else if (ds !== t0) break; // an unfinished TODAY is skipped, not counted as a break
     }
     cur.setDate(cur.getDate() - 1);
   }
@@ -903,9 +909,10 @@ $('remindBtn').onclick = async () => {
 };
 startReminderWatch();
 
-// Registers the no-op service worker in public/sw.js — its only purpose is
-// to make "Add to Home Screen" available; it caches nothing.
-if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
+// Registers public/sw.js - the offline-first worker (it saves the app on the
+// phone so it opens with no internet, but always asks the internet first).
+// Only in the built/deployed app, not while developing with `npm run dev`.
+if ('serviceWorker' in navigator && import.meta.env.PROD) navigator.serviceWorker.register('/sw.js').catch(() => {});
 
 renderPages();
 render();
