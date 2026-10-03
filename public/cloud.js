@@ -1,4 +1,4 @@
-/* Tesnim cloud add-on: login + automatic sync + roles. Edit ONLY the two lines below. */
+/* Tesnim cloud add-on: login + automatic sync + roles + offline-safe sync (Phase 2). Edit ONLY the two lines below. */
 (function () {
   'use strict';
   var SB_URL = 'https://xdjfiiuqiecntyuarvkq.supabase.co', SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhkamZpaXVxaWVjbnR5dWFydmtxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA3NDM2NDcsImV4cCI6MjEwNjMxOTY0N30.kyiKWvh8OvQQG7vVtLHddc-Sksk_2U3ZVI42o3V51as';
@@ -7,10 +7,12 @@
   var PERMS = [['add', '＋ መጨመር'], ['edit', '✎ አርትዕ'], ['del', '🗑 መሰረዝ'], ['trash', '♻ ቆሻሻ መጣያ'], ['dash', '◔ አጠቃላይ ውጤት'], ['rep', '📋 ሪፖርቶች'], ['set', '⚙ ቅንብሮች'], ['stat', '📊 ስታትስቲክስ'], ['cal', '📅 ቀን መቁጠሪያ'], ['tick', '✓ ምልክት ማድረግ'], ['past', '🕘 ያለፉ ቀናትን ማስተካከል']];
   var ROLES = [['member', '👤 አባል (ምልክት ብቻ)', 'tick,dash,rep,stat,cal'], ['viewer', '👁 ተመልካች (ማየት ብቻ)', 'dash,rep,stat,cal'], ['history', '🕘 ታሪክ አራሚ', 'tick,past,dash,rep,stat,cal'], ['editor', '✎ አርታኢ', 'add,edit,del,trash,dash,rep,set,stat,cal,tick'], ['custom', '⚙ ብጁ', '']];
   var ls = window.localStorage, rawSet = Storage.prototype.setItem, rawRem = Storage.prototype.removeItem;
-  var tok = ls.getItem('tesnim_token'), me = null, cur = { sv: 0, mv: 0, lv: 0 }, ready = false, timer = null, prev = {};
+  var tok = ls.getItem('tesnim_token'), me = null, cur = { sv: 0, mv: 0, lv: 0 }, ready = false, timer = null, prev = {}, net = true, polling = false, gen = 0, dirty = { s: 0, m: 0 };
   window.TESNIM_ALL_PROGRAMS = null; ls.removeItem('tesnim_allprogs'); // Phase 1: a phone never holds other people's activities
   var $ = function (id) { return document.getElementById(id); };
-  var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); };
+  var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>\"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); };
+  try { prev = JSON.parse(ls.getItem('tesnim_prev') || 'null') || {}; } catch (e) { prev = {}; }   // Phase 2: the log as the server last had it (survives restarts, so offline ticks are never forgotten)
+  try { dirty = JSON.parse(ls.getItem('tesnim_dirty') || 'null') || dirty; } catch (e) { }
 
   function api(fn, args) {
     return fetch(SB_URL + '/rest/v1/rpc/' + fn, { method: 'POST', headers: { apikey: SB_KEY, Authorization: 'Bearer ' + SB_KEY, 'Content-Type': 'application/json' }, body: JSON.stringify(args || {}) })
@@ -23,14 +25,31 @@
   function sig() { return 'v2:' + cur.sv + ':' + cur.mv + ':' + cur.lv + ':' + JSON.stringify([me.programs, me.perms, me.is_admin]); }
   function canShared() { return me.is_admin || (me.programs === 'all' && (me.perms.add || me.perms.edit || me.perms.del)); }
 
+  // ---------- Phase 2: things that survive closing the app (needed for offline use) ----------
+  function saveCv() { rawSet.call(ls, 'tesnim_cv', sig()); rawSet.call(ls, 'tesnim_curv', JSON.stringify(cur)); }
+  function setPrev(v) { prev = v; rawSet.call(ls, 'tesnim_prev', JSON.stringify(v)); }
+  function setDirty(s, m) { dirty = { s: s, m: m }; rawSet.call(ls, 'tesnim_dirty', JSON.stringify(dirty)); }
+  function saveMe() {   // a safe copy of who I am (no password hash), so the app can open with no internet
+    try { rawSet.call(ls, 'tesnim_me', JSON.stringify({ id: me.id, username: me.username, is_admin: !!me.is_admin, perms: me.perms || {}, programs: me.programs })); } catch (e) { }
+  }
+  function wipeLocal(keepToken) {
+    SH.concat(MI, ['tesnim_cv', 'tesnim_curv', 'tesnim_log', 'tesnim_prev', 'tesnim_dirty', 'tesnim_me', 'tesnim_allprogs', 'tesnim_role'], keepToken ? [] : ['tesnim_token']).forEach(function (k) { rawRem.call(ls, k); });
+  }
+
   // Every app save to localStorage is pushed to the cloud a moment later
   Storage.prototype.setItem = function (k, v) {
     rawSet.call(this, k, v);
-    if (ready && this === ls && (SH.indexOf(k) > -1 || MI.indexOf(k) > -1 || k === 'tesnim_log')) { clearTimeout(timer); timer = setTimeout(push, 1200); }
+    if (ready && this === ls) {
+      var s = SH.indexOf(k) > -1, m = MI.indexOf(k) > -1;
+      if (s || m || k === 'tesnim_log') {
+        gen++; if (s) setDirty(1, dirty.m); if (m) setDirty(dirty.s, 1);
+        clearTimeout(timer); timer = setTimeout(push, 1200); status();
+      }
+    }
   };
   function pick(keys) { var o = {}; keys.forEach(function (k) { var v = ls.getItem(k); if (v != null) o[k] = v; }); return o; }
   function readLog() { try { return JSON.parse(ls.getItem('tesnim_log') || '{}') || {}; } catch (e) { return {}; } }
-  function logDiff() {   // only the ticks THIS phone changed (so nobody's ticks get overwritten)
+  function logDiff() {   // only the ticks THIS phone changed since the server last had them (so nobody's ticks get overwritten)
     var now = readLog(), ch = {}, any = false;
     Object.keys(now).concat(Object.keys(prev)).forEach(function (d) {
       var a = now[d] || {}, b = prev[d] || {};
@@ -40,25 +59,52 @@
     });
     return any ? { ch: ch, now: now } : null;
   }
+  function pend() { return !!(logDiff() || dirty.m || (canShared() && dirty.s)); }   // anything not yet sent to the cloud?
+  function pendCount() { var df = logDiff(), n = 0; if (df) Object.keys(df.ch).forEach(function (d) { n += Object.keys(df.ch[d]).length; }); return n; }
+  function status() {   // the small "offline / waiting to send" label next to your name
+    var s = $('cl-st'); if (!s) return;
+    var n = pendCount(), off = !net || navigator.onLine === false;
+    s.textContent = off ? '📴 ከመስመር ውጭ' + (n ? ' · ⏳' + n : '') : (n ? '⏳ ' + n : '');
+    s.style.display = (off || n) ? '' : 'none';
+  }
+  function overlay(base, ch) {   // put my unsent ticks on top of the server's log (null = I un-ticked it)
+    var o = JSON.parse(JSON.stringify(base || {}));
+    Object.keys(ch).forEach(function (d) {
+      Object.keys(ch[d]).forEach(function (p) {
+        if (ch[d][p] === null) { if (o[d]) { delete o[d][p]; if (!Object.keys(o[d]).length) delete o[d]; } }
+        else { (o[d] = o[d] || {})[p] = ch[d][p]; }
+      });
+    });
+    return o;
+  }
+  function kick() { if (pend()) { clearTimeout(timer); timer = setTimeout(push, 500); } }
+
   function push() {
     timer = null; if (!me) return;
-    var sh = canShared(), df = logDiff();
-    var jobs = [api('app_put', { p_tok: tok, p_shared: sh ? pick(SH) : null, p_mine: pick(MI) }).then(function (r) {
-      cur.mv = r.mv; if (sh) cur.sv = r.sv; rawSet.call(ls, 'tesnim_cv', sig());
-    })];
+    var sh = canShared() && !!dirty.s, mi = !!dirty.m, df = logDiff(), g = gen, jobs = [];
+    if (sh || mi) jobs.push(api('app_put', { p_tok: tok, p_shared: sh ? pick(SH) : null, p_mine: pick(MI) }).then(function (r) {
+      cur.mv = r.mv; if (sh) cur.sv = r.sv; if (g === gen) setDirty(sh ? 0 : dirty.s, 0); saveCv();
+    }));
     if (df) jobs.push(api('app_put_log', { p_tok: tok, p_changes: df.ch }).then(function (r) {
-      prev = df.now; if (r.lv === cur.lv + 1) cur.lv = r.lv; rawSet.call(ls, 'tesnim_cv', sig());
+      setPrev(df.now); if (r.lv === cur.lv + 1) cur.lv = r.lv; saveCv();
       if (r.rej && r.rej.length) refused();
     }));
-    Promise.all(jobs).catch(function () { clearTimeout(timer); timer = setTimeout(push, 10000); });
+    if (!jobs.length) { status(); return; }
+    Promise.all(jobs).then(function () { net = true; status(); }).catch(function (e) {
+      if (e && /auth/.test(e.message)) { ls.removeItem('tesnim_token'); return location.reload(); }
+      net = false; status(); clearTimeout(timer); timer = setTimeout(push, 15000);   // offline: keep the ticks, try again soon
+    });
   }
   // The server said no to some ticks (locked day / no permission): show why, then reload the true server copy.
   function refused() {
     var n = document.createElement('div'); n.id = 'cl-note'; n.textContent = '⛔ ይህ ቀን ተቆልፏል — ለውጡ አልተቀመጠም'; document.body.appendChild(n);
-    api('app_get', { p_tok: tok }).then(function (x) { me = x.user; cur = { sv: x.sv, mv: x.mv, lv: x.lv }; apply(x); setTimeout(function () { location.reload(); }, 1800); }).catch(function () { });
+    api('app_get', { p_tok: tok }).then(function (x) { me = x.user; cur = { sv: x.sv, mv: x.mv, lv: x.lv }; apply(x, true); setTimeout(function () { location.reload(); }, 1800); }).catch(function () { });
   }
-  function apply(d) {
+  function apply(d, discard) {   // discard = true only when the server refused my ticks
+    var pendingTicks = discard ? null : logDiff();   // must be read BEFORE the log is replaced
+    var keepS = !discard && canShared() && !!dirty.s, keepM = !discard && !!dirty.m;   // my unsent edits win over the cloud copy
     SH.forEach(function (k) {
+      if (keepS) return;
       var v = d.shared[k];
       if (k === 'tesnim_programs' && v != null && !me.is_admin && me.programs !== 'all') {
         var ids = me.programs || [];
@@ -66,36 +112,65 @@
       }
       if (v == null) rawRem.call(ls, k); else rawSet.call(ls, k, v);
     });
-    MI.forEach(function (k) { var v = d.mine[k]; if (v == null) rawRem.call(ls, k); else rawSet.call(ls, k, v); });
-    rawSet.call(ls, 'tesnim_log', JSON.stringify(d.log || {})); prev = d.log || {};
-    storeRole();
-    rawSet.call(ls, 'tesnim_cv', sig());
+    MI.forEach(function (k) { if (keepM) return; var v = d.mine[k]; if (v == null) rawRem.call(ls, k); else rawSet.call(ls, k, v); });
+    var log = d.log || {};
+    rawSet.call(ls, 'tesnim_log', JSON.stringify(pendingTicks ? overlay(log, pendingTicks.ch) : log)); setPrev(log);
+    storeRole(); saveMe();
+    saveCv();
   }
   function safe() {
     var a = document.activeElement;
-    return !timer && !(a && /INPUT|TEXTAREA/.test(a.tagName)) && !document.querySelector('.overlay.open,#detailView.open');
+    return !timer && !pend() && !(a && /INPUT|TEXTAREA/.test(a.tagName)) && !document.querySelector('.overlay.open,#detailView.open');
   }
   function classes() {
     var b = document.body; b.classList.add('cloud', 'pb');
     if (me.is_admin) b.classList.add('is-admin');
     else PERMS.forEach(function (p) { if (!permOn(p[0])) b.classList.add('no-' + p[0]); });
   }
-  function logout() {
-    api('app_put', { p_tok: tok, p_shared: null, p_mine: pick(MI) }).catch(function () { }).then(function () {
-      SH.concat(MI, ['tesnim_token', 'tesnim_cv', 'tesnim_log', 'tesnim_allprogs', 'tesnim_role']).forEach(function (k) { rawRem.call(ls, k); }); location.reload();
+  function logout() {   // never throw away ticks that were not sent yet
+    var df = logDiff();
+    var go = function () { api('app_put', { p_tok: tok, p_shared: null, p_mine: pick(MI) }).catch(function () { }).then(function () { wipeLocal(false); location.reload(); }); };
+    if (!df) return go();
+    api('app_put_log', { p_tok: tok, p_changes: df.ch }).then(go).catch(function () {
+      if (confirm('⚠ ገና ያልተላኩ ለውጦች አሉ። አሁን ከወጡ ይጠፋሉ። ኢንተርኔት ካለዎት ቆይተው ይውጡ። ለማንኛውም ይውጡ?')) go();
     });
   }
+
+  // ---------- Phase 2: checking the cloud (slowly, and only while the app is on screen) ----------
+  function pollNow() {
+    if (!ready || !tok) return;
+    if (pend()) { kick(); return; }   // send my own changes first, then look for new ones
+    api('app_get', { p_tok: tok }).then(function (n) {
+      net = true; me = n.user; saveMe(); var old = cur; cur = { sv: n.sv, mv: n.mv, lv: n.lv };
+      if (ls.getItem('tesnim_cv') !== sig()) { if (safe()) { apply(n); location.reload(); } else cur = old; }
+      status();
+    }).catch(function (e) { if (/auth/.test(e.message)) { ls.removeItem('tesnim_token'); location.reload(); } else { net = false; status(); } });
+  }
+  function startPolling() {
+    if (polling) return; polling = true;
+    setInterval(function () { if (document.visibilityState === 'visible') pollNow(); }, 60000);   // was every 8 seconds
+    document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') { kick(); pollNow(); } });
+  }
+  window.addEventListener('online', function () { net = true; status(); if (ready) { kick(); pollNow(); } });
+  window.addEventListener('offline', function () { net = false; status(); });
+
   function start(d) {
-    me = d.user; cur = { sv: d.sv, mv: d.mv, lv: d.lv }; prev = d.log || {}; storeRole(); classes(); chip();
-    if (me.is_admin && d.sv === 0) { prev = {}; ready = true; push(); rawSet.call(ls, 'tesnim_cv', sig()); return unveil(); }
+    var old = null; try { old = JSON.parse(ls.getItem('tesnim_me') || 'null'); } catch (e) { }
+    if (old && d.user && ((old.id && d.user.id && old.id !== d.user.id) || (!(old.id && d.user.id) && old.username !== d.user.username))) { wipeLocal(true); prev = {}; dirty = { s: 0, m: 0 }; }   // someone else logged in on this phone
+    me = d.user; cur = { sv: d.sv, mv: d.mv, lv: d.lv };
+    if (ls.getItem('tesnim_prev') == null) setPrev(d.log || {});
+    saveMe(); storeRole(); classes(); chip();
+    if (me.is_admin && d.sv === 0) { setPrev({}); ready = true; push(); saveCv(); return unveil(); }
     if (ls.getItem('tesnim_cv') !== sig()) { apply(d); return location.reload(); }
-    ready = true; unveil();
-    setInterval(function () {
-      api('app_get', { p_tok: tok }).then(function (n) {
-        me = n.user; var old = cur; cur = { sv: n.sv, mv: n.mv, lv: n.lv };
-        if (ls.getItem('tesnim_cv') !== sig()) { if (safe()) { apply(n); location.reload(); } else cur = old; }
-      }).catch(function (e) { if (/auth/.test(e.message)) { ls.removeItem('tesnim_token'); location.reload(); } });
-    }, 8000);
+    ready = true; unveil(); status(); kick(); startPolling();
+  }
+  function offlineStart() {   // no internet at app start: open from this phone's saved copy
+    unveil();
+    var cm = null; try { cm = JSON.parse(ls.getItem('tesnim_me') || 'null'); } catch (e) { }
+    if (!cm || ls.getItem('tesnim_prev') == null) { ready = false; return; }   // never synced on this phone yet: nothing to open
+    me = cm; net = false;
+    try { cur = JSON.parse(ls.getItem('tesnim_curv') || 'null') || cur; } catch (e) { }
+    classes(); chip(); ready = true; status(); startPolling(); kick();
   }
 
   // ---------- UI ----------
@@ -124,12 +199,12 @@
 .cl-chk input:before{content:'';position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:#fff;transition:.2s}.cl-chk input:checked{background:#2fbf84}.cl-chk input:checked:before{left:21px}
 #cl-chip{padding:7px;gap:10px;background:rgba(12,42,32,.55);border:1px solid rgba(255,255,255,.25);-webkit-backdrop-filter:blur(18px) saturate(160%);backdrop-filter:blur(18px) saturate(160%);box-shadow:0 10px 30px rgba(0,0,0,.35),inset 0 1px 0 rgba(255,255,255,.25)}
 #cl-chip .av{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;font-weight:700;background:linear-gradient(145deg,#ffd760,#e79a00);color:#3b2a00}
-#cl-chip .nm{display:flex;flex-direction:column;line-height:1.15;font-weight:600}#cl-chip .nm small{font-size:10px;opacity:.7;font-weight:400}`;
+#cl-st{font-size:12px;opacity:.9;white-space:nowrap}#cl-chip .nm{display:flex;flex-direction:column;line-height:1.15;font-weight:600}#cl-chip .nm small{font-size:10px;opacity:.7;font-weight:400}`;
   document.head.appendChild(css);
   function el(id, html) { var d = document.createElement('div'); d.id = id; d.innerHTML = html || ''; document.body.appendChild(d); return d; }
   function unveil() { var v = $('cl-veil'); if (v) v.remove(); }
   function chip() {
-    el('cl-chip', '<span class="av">' + esc(me.username.charAt(0).toUpperCase()) + '</span><span class="nm">' + esc(me.username) + '<small>' + (me.is_admin ? 'አስተዳዳሪ' : 'ተጠቃሚ') + '</small></span>' + (me.is_admin ? '<button id="cl-adm">👑 ተጠቃሚዎች</button>' : '') + '<button id="cl-out">ውጣ</button>');
+    el('cl-chip', '<span class="av">' + esc(me.username.charAt(0).toUpperCase()) + '</span><span class="nm">' + esc(me.username) + '<small>' + (me.is_admin ? 'አስተዳዳሪ' : 'ተጠቃሚ') + '</small></span><span id="cl-st" style="display:none"></span>' + (me.is_admin ? '<button id="cl-adm">👑 ተጠቃሚዎች</button>' : '') + '<button id="cl-out">ውጣ</button>');
     $('cl-out').onclick = logout; if (me.is_admin) $('cl-adm').onclick = admin;
   }
   function login() {
@@ -192,8 +267,8 @@
   if (SB_URL.indexOf('YOUR-') === 0) return;   // not configured yet: app works as before
   el('cl-veil');
   if (!tok) return login();
-  api('app_get', { p_tok: tok }).then(start).catch(function (e) {
+  api('app_get', { p_tok: tok }).then(start, function (e) {
     if (/auth/.test(e.message)) { ls.removeItem('tesnim_token'); return login(); }
-    ready = false; unveil();   // offline: app keeps working from this phone's copy
+    offlineStart();   // no internet: open from this phone's saved copy
   });
 })();
