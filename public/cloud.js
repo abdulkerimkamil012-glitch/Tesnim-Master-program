@@ -4,10 +4,11 @@
   var SB_URL = 'https://xdjfiiuqiecntyuarvkq.supabase.co', SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhkamZpaXVxaWVjbnR5dWFydmtxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA3NDM2NDcsImV4cCI6MjEwNjMxOTY0N30.kyiKWvh8OvQQG7vVtLHddc-Sksk_2U3ZVI42o3V51as';
   var SH = ['tesnim_programs', 'tesnim_pages', 'tesnim_trash', 'tesnim_removed_seeds'];
   var MI = ['tesnim_dayov', 'tesnim_first'];
-  var PERMS = [['add', '＋ መጨመር'], ['edit', '✎ አርትዕ'], ['del', '🗑 መሰረዝ'], ['trash', '♻ ቆሻሻ መጣያ'], ['dash', '◔ አጠቃላይ ውጤት'], ['rep', '📋 ሪፖርቶች'], ['set', '⚙ ቅንብሮች'], ['stat', '📊 ስታትስቲክስ'], ['cal', '📅 ቀን መቁጠሪያ']];
+  var PERMS = [['add', '＋ መጨመር'], ['edit', '✎ አርትዕ'], ['del', '🗑 መሰረዝ'], ['trash', '♻ ቆሻሻ መጣያ'], ['dash', '◔ አጠቃላይ ውጤት'], ['rep', '📋 ሪፖርቶች'], ['set', '⚙ ቅንብሮች'], ['stat', '📊 ስታትስቲክስ'], ['cal', '📅 ቀን መቁጠሪያ'], ['tick', '✓ ምልክት ማድረግ'], ['past', '🕘 ያለፉ ቀናትን ማስተካከል']];
+  var ROLES = [['member', '👤 አባል (ምልክት ብቻ)', 'tick,dash,rep,stat,cal'], ['viewer', '👁 ተመልካች (ማየት ብቻ)', 'dash,rep,stat,cal'], ['history', '🕘 ታሪክ አራሚ', 'tick,past,dash,rep,stat,cal'], ['editor', '✎ አርታኢ', 'add,edit,del,trash,dash,rep,set,stat,cal,tick'], ['custom', '⚙ ብጁ', '']];
   var ls = window.localStorage, rawSet = Storage.prototype.setItem, rawRem = Storage.prototype.removeItem;
   var tok = ls.getItem('tesnim_token'), me = null, cur = { sv: 0, mv: 0, lv: 0 }, ready = false, timer = null, prev = {};
-  try { window.TESNIM_ALL_PROGRAMS = JSON.parse(ls.getItem('tesnim_allprogs') || 'null'); } catch (e) { window.TESNIM_ALL_PROGRAMS = null; }
+  window.TESNIM_ALL_PROGRAMS = null; ls.removeItem('tesnim_allprogs'); // Phase 1: a phone never holds other people's activities
   var $ = function (id) { return document.getElementById(id); };
   var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); };
 
@@ -15,7 +16,11 @@
     return fetch(SB_URL + '/rest/v1/rpc/' + fn, { method: 'POST', headers: { apikey: SB_KEY, Authorization: 'Bearer ' + SB_KEY, 'Content-Type': 'application/json' }, body: JSON.stringify(args || {}) })
       .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.message || 'error'); return j; }); });
   }
-  function sig() { return cur.sv + ':' + cur.mv + ':' + cur.lv + ':' + JSON.stringify([me.programs, me.perms, me.is_admin]); }
+  function permOn(k) { return !!me.is_admin || (k === 'tick' ? me.perms.tick !== false : !!me.perms[k]); }
+  function storeRole() {   // read by src/main.js at page load: who am I, may I tick, may I edit past days
+    rawSet.call(ls, 'tesnim_role', JSON.stringify({ r: !me.is_admin && me.programs !== 'all', past: permOn('past'), tick: permOn('tick') }));
+  }
+  function sig() { return 'v2:' + cur.sv + ':' + cur.mv + ':' + cur.lv + ':' + JSON.stringify([me.programs, me.perms, me.is_admin]); }
   function canShared() { return me.is_admin || (me.programs === 'all' && (me.perms.add || me.perms.edit || me.perms.del)); }
 
   // Every app save to localStorage is pushed to the cloud a moment later
@@ -43,13 +48,19 @@
     })];
     if (df) jobs.push(api('app_put_log', { p_tok: tok, p_changes: df.ch }).then(function (r) {
       prev = df.now; if (r.lv === cur.lv + 1) cur.lv = r.lv; rawSet.call(ls, 'tesnim_cv', sig());
+      if (r.rej && r.rej.length) refused();
     }));
     Promise.all(jobs).catch(function () { clearTimeout(timer); timer = setTimeout(push, 10000); });
+  }
+  // The server said no to some ticks (locked day / no permission): show why, then reload the true server copy.
+  function refused() {
+    var n = document.createElement('div'); n.id = 'cl-note'; n.textContent = '⛔ ይህ ቀን ተቆልፏል — ለውጡ አልተቀመጠም'; document.body.appendChild(n);
+    api('app_get', { p_tok: tok }).then(function (x) { me = x.user; cur = { sv: x.sv, mv: x.mv, lv: x.lv }; apply(x); setTimeout(function () { location.reload(); }, 1800); }).catch(function () { });
   }
   function apply(d) {
     SH.forEach(function (k) {
       var v = d.shared[k];
-      if (k === 'tesnim_programs' && v != null && me.programs !== 'all') {
+      if (k === 'tesnim_programs' && v != null && !me.is_admin && me.programs !== 'all') {
         var ids = me.programs || [];
         try { v = JSON.stringify(JSON.parse(v).filter(function (p) { return ids.indexOf(p.id) > -1; })); } catch (e) { v = '[]'; }
       }
@@ -57,7 +68,7 @@
     });
     MI.forEach(function (k) { var v = d.mine[k]; if (v == null) rawRem.call(ls, k); else rawSet.call(ls, k, v); });
     rawSet.call(ls, 'tesnim_log', JSON.stringify(d.log || {})); prev = d.log || {};
-    if (me.programs !== 'all' && !me.is_admin && d.shared.tesnim_programs) rawSet.call(ls, 'tesnim_allprogs', d.shared.tesnim_programs); else rawRem.call(ls, 'tesnim_allprogs');
+    storeRole();
     rawSet.call(ls, 'tesnim_cv', sig());
   }
   function safe() {
@@ -67,15 +78,15 @@
   function classes() {
     var b = document.body; b.classList.add('cloud', 'pb');
     if (me.is_admin) b.classList.add('is-admin');
-    else PERMS.forEach(function (p) { if (!me.perms[p[0]]) b.classList.add('no-' + p[0]); });
+    else PERMS.forEach(function (p) { if (!permOn(p[0])) b.classList.add('no-' + p[0]); });
   }
   function logout() {
     api('app_put', { p_tok: tok, p_shared: null, p_mine: pick(MI) }).catch(function () { }).then(function () {
-      SH.concat(MI, ['tesnim_token', 'tesnim_cv', 'tesnim_log', 'tesnim_allprogs']).forEach(function (k) { rawRem.call(ls, k); }); location.reload();
+      SH.concat(MI, ['tesnim_token', 'tesnim_cv', 'tesnim_log', 'tesnim_allprogs', 'tesnim_role']).forEach(function (k) { rawRem.call(ls, k); }); location.reload();
     });
   }
   function start(d) {
-    me = d.user; cur = { sv: d.sv, mv: d.mv, lv: d.lv }; prev = d.log || {}; classes(); chip();
+    me = d.user; cur = { sv: d.sv, mv: d.mv, lv: d.lv }; prev = d.log || {}; storeRole(); classes(); chip();
     if (me.is_admin && d.sv === 0) { prev = {}; ready = true; push(); rawSet.call(ls, 'tesnim_cv', sig()); return unveil(); }
     if (ls.getItem('tesnim_cv') !== sig()) { apply(d); return location.reload(); }
     ready = true; unveil();
@@ -99,6 +110,7 @@
     '.cl-chk{display:flex;gap:10px;align-items:center;padding:7px 0;font-size:15px}.cl-chk input{width:20px;height:20px}#cl-err{color:#ff9d8f;min-height:18px;font-size:14px}.cl-box{max-height:220px;overflow-y:auto;padding:4px 12px;border-radius:12px;background:#ffffff0d}' +
     'body:not(.is-admin) #importBtn,body:not(.is-admin) #exportBtn{display:none}.no-add #addBtn,.no-add #addPageBtn{display:none}.no-edit .edit,.no-edit [data-pgedit],.no-edit .dtab[data-tab=edit]{display:none}' +
     '.no-del .del,.no-del [data-pgdel],.no-del #etDelete,.no-del .trash-purge,.no-del #trashClearAll{display:none}.no-trash #trashBtn{display:none}.no-dash .ringcard{display:none}.no-rep #dayRepBtn,.no-rep #weekBtn{display:none}' +
+    '.no-tick .tick,.no-tick .subtick,.no-tick .wd-cell{pointer-events:none;opacity:.45}#cl-note{position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:70;padding:10px 16px;border-radius:99px;background:#c0392b;color:#fff;font-size:14px;max-width:90vw;text-align:center}' +
     '.no-set #remindBtn{display:none}.no-set.no-trash #settingsBtn,.no-set.no-trash #settingsPanel{display:none}.no-stat [data-openstat],.no-stat .dtab[data-tab=stat]{display:none}.no-cal [data-opencal],.no-cal .dtab[data-tab=cal]{display:none}.no-cal.no-stat.no-edit #detailView{display:none!important}';
   css.textContent += `#cl-login,#cl-admin{background:radial-gradient(circle at 18% 12%,#2f8f6a 0,transparent 45%),radial-gradient(circle at 88% 85%,#ffba0055 0,transparent 42%),linear-gradient(160deg,#0c3b2e,#071f18)}
 #cl-login form,#cl-admin .in{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.22);border-radius:28px;box-shadow:0 20px 60px rgba(0,0,0,.45),inset 0 1px 0 rgba(255,255,255,.25);-webkit-backdrop-filter:blur(22px) saturate(160%);backdrop-filter:blur(22px) saturate(160%)}
@@ -134,9 +146,11 @@
   function admin() {
     var box = el('cl-admin', '<div class="in"><p>...</p></div>');
     function close() { box.remove(); }
+    var users = [];
     function list() {
       api('admin_list', { p_tok: tok }).then(function (us) {
-        box.innerHTML = '<div class="in"><h2>👑 ተጠቃሚዎች</h2>' + us.map(function (u) { return '<div class="cl-row"><span><b>' + esc(u.username) + '</b>' + (u.is_admin ? ' 👑' : '') + '</span><span><button class="cl-btn g" data-e="' + u.id + '">አርትዕ</button> <button class="cl-btn r" data-d="' + u.id + '">🗑</button></span></div>'; }).join('') +
+        users = us;
+        box.innerHTML = '<div class="in"><h2>👑 ተጠቃሚዎች</h2>' + us.map(function (u) { return '<div class="cl-row"><span><b>' + esc(u.username) + '</b>' + (u.is_admin ? ' 👑' : '') + (u.perms && u.perms.role ? ' <small>' + esc(u.perms.role) + '</small>' : '') + '</span><span><button class="cl-btn g" data-e="' + u.id + '">አርትዕ</button> <button class="cl-btn r" data-d="' + u.id + '">🗑</button></span></div>'; }).join('') +
           '<p><button class="cl-btn" id="cl-new">＋ አዲስ ተጠቃሚ</button> <button class="cl-btn g" id="cl-x">ዝጋ</button></p></div>';
         $('cl-x').onclick = close; $('cl-new').onclick = function () { form(null); };
         box.querySelectorAll('[data-e]').forEach(function (b) { b.onclick = function () { form(us.filter(function (u) { return u.id === b.dataset.e; })[0]); }; });
@@ -147,20 +161,28 @@
       u = u || { username: '', is_admin: false, perms: {}, programs: [] };
       var progs = []; try { progs = JSON.parse(ls.getItem('tesnim_programs') || '[]'); } catch (e) { }
       var all = u.programs === 'all';
+      var taken = {};   // activity id -> name of the OTHER person who already owns it
+      users.forEach(function (o) { if (o.id !== u.id && !o.is_admin && Array.isArray(o.programs)) o.programs.forEach(function (g) { taken[g] = o.username; }); });
       box.innerHTML = '<div class="in"><h2>' + (u.id ? 'አርትዕ' : 'አዲስ ተጠቃሚ') + '</h2>' +
         '<input class="cl-in" id="f-u" placeholder="የተጠቃሚ ስም" value="' + esc(u.username) + '" autocapitalize="none"><br><br><input class="cl-in" id="f-p" type="text" placeholder="' + (u.id ? 'የይለፍ ቃል (ባዶ = አይቀየርም)' : 'የይለፍ ቃል') + '" autocomplete="off">' +
-        '<label class="cl-chk"><input type="checkbox" id="f-a"' + (u.is_admin ? ' checked' : '') + '> 👑 አስተዳዳሪ (ሁሉንም ያያል)</label><h3>ፈቃዶች</h3>' +
-        PERMS.map(function (p) { return '<label class="cl-chk"><input type="checkbox" data-p="' + p[0] + '"' + (u.perms[p[0]] ? ' checked' : '') + '> ' + p[1] + '</label>'; }).join('') +
+        '<label class="cl-chk"><input type="checkbox" id="f-a"' + (u.is_admin ? ' checked' : '') + '> 👑 አስተዳዳሪ (ሁሉንም ያያል)</label><h3>ሚና</h3><select class="cl-in" id="f-role">' + ROLES.map(function (r) { return '<option value="' + r[0] + '"' + ((u.perms && u.perms.role || 'custom') === r[0] ? ' selected' : '') + '>' + r[1] + '</option>'; }).join('') + '</select><h3>ፈቃዶች</h3>' +
+        PERMS.map(function (p) { return '<label class="cl-chk"><input type="checkbox" data-p="' + p[0] + '"' + ((u.perms[p[0]] !== undefined ? u.perms[p[0]] : p[0] === 'tick') ? ' checked' : '') + '> ' + p[1] + '</label>'; }).join('') +
         '<h3>የሚያያቸው ፕሮግራሞች</h3><label class="cl-chk"><input type="checkbox" id="f-all"' + (all ? ' checked' : '') + '> ሁሉም ፕሮግራሞች</label><div class="cl-box" id="f-list">' +
-        progs.map(function (p) { return '<label class="cl-chk"><input type="checkbox" data-g="' + esc(p.id) + '"' + (all || (u.programs || []).indexOf(p.id) > -1 ? ' checked' : '') + '> ' + esc(p.name) + '</label>'; }).join('') + '</div>' +
+        progs.map(function (p) { var mine = all || (u.programs || []).indexOf(p.id) > -1, tk = taken[p.id]; return '<label class="cl-chk"><input type="checkbox" data-g="' + esc(p.id) + '"' + (mine ? ' checked' : '') + (tk && !mine ? ' disabled' : '') + '> ' + esc(p.name) + (tk ? ' <small>(' + esc(tk) + ')</small>' : '') + '</label>'; }).join('') + '</div>' +
         '<div id="cl-err"></div><p><button class="cl-btn" id="f-s">አስቀምጥ</button> <button class="cl-btn g" id="f-c">ተመለስ</button></p></div>';
-      $('f-all').onchange = function () { box.querySelectorAll('[data-g]').forEach(function (c) { c.checked = $('f-all').checked; }); };
+      $('f-all').onchange = function () { box.querySelectorAll('[data-g]').forEach(function (c) { if (!c.disabled) c.checked = $('f-all').checked; }); };
+      $('f-role').onchange = function () {
+        var r = ROLES.filter(function (x) { return x[0] === $('f-role').value; })[0]; if (!r || r[0] === 'custom') return;
+        var on = r[2].split(',');
+        box.querySelectorAll('[data-p]').forEach(function (c) { c.checked = on.indexOf(c.dataset.p) > -1; });
+        if (r[0] === 'editor') { $('f-all').checked = true; $('f-all').onchange(); }
+      };
       $('f-c').onclick = list;
       $('f-s').onclick = function () {
-        var perms = {}; box.querySelectorAll('[data-p]').forEach(function (c) { perms[c.dataset.p] = c.checked; });
+        var perms = {}; box.querySelectorAll('[data-p]').forEach(function (c) { perms[c.dataset.p] = c.checked; }); perms.role = $('f-role').value;
         var ids = []; box.querySelectorAll('[data-g]').forEach(function (c) { if (c.checked) ids.push(c.dataset.g); });
         api('admin_save', { p_tok: tok, p_id: u.id || null, p_username: $('f-u').value, p_pass: $('f-p').value, p_admin: $('f-a').checked, p_perms: perms, p_programs: $('f-all').checked ? 'all' : ids })
-          .then(list).catch(function (e) { $('cl-err').textContent = /duplicate/.test(e.message) ? 'ይህ ስም ተይዟል' : e.message; });
+          .then(list).catch(function (e) { $('cl-err').textContent = /duplicate/.test(e.message) ? 'ይህ ስም ተይዟል' : /overlap/.test(e.message) ? 'ይህ ፕሮግራም አስቀድሞ የሌላ ተጠቃሚ ነው: ' + e.message.split(':').pop() : /own admin/.test(e.message) ? 'የራስዎን አስተዳዳሪነት ማስወገድ አይቻልም' : e.message; });
       };
     }
     list();
