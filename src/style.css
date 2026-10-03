@@ -243,3 +243,6 @@ h1.title{white-space:normal}
 .edit-tab .typerow,.edit-tab .daychips{margin-top:6px}
 .edit-tab .savebtn{width:100%;margin-top:18px;padding:14px;border-radius:14px;font-weight:700;background:var(--btn);color:var(--btnfg)}
 .edit-tab .delbtn{width:100%;margin-top:10px;padding:14px;border-radius:14px;font-weight:700;background:none;border:1px solid #C0524A;color:#C0524A}
+
+/* ---- Phase 1: locked days (past/future, or no tick permission) ---- */
+.day-locked .tick,.day-locked .subtick{opacity:.45}
